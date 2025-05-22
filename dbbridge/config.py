@@ -2,11 +2,11 @@
 
 import os
 import configparser
+from dotenv import load_dotenv
 from pathlib import Path
 
 # Optional: load a .env file if python-dotenv is installed
 try:
-    from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
@@ -22,13 +22,13 @@ def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
     # 1) ENV-first
     name = os.getenv("DB_NAME")
     user = os.getenv("DB_USER")
-    pwd  = os.getenv("DB_PASS")
+    pwd = os.getenv("DB_PASS")
     if name and user and pwd:
         return {
-            "host":     os.getenv("DB_HOST", "localhost"),
-            "port":     int(os.getenv("DB_PORT", 3306)),
+            "host": os.getenv("DB_HOST", "localhost"),
+            "port": int(os.getenv("DB_PORT", "3306")),
             "database": name,
-            "user":     user,
+            "user": user,
             "password": pwd,
         }
 
@@ -56,9 +56,9 @@ def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
 
     sect = cfg[active]
     return {
-        "host":     sect.get("host", "localhost"),
-        "port":     int(sect.get("port", 3306)),
+        "host": sect.get("host", "localhost"),
+        "port": int(sect.get("port", '3306')),
         "database": sect["name"],
-        "user":     sect["user"],
+        "user": sect["user"],
         "password": sect["password"],
     }

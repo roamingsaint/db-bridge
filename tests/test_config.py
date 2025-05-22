@@ -1,12 +1,8 @@
-import os
-import tempfile
 import pytest
-from pathlib import Path
 
-import config
+from dbbridge import config
 
 
-# clear any ENV vars that might interfere
 @pytest.fixture(autouse=True)
 def clear_env(monkeypatch):
     for var in ("DB_NAME", "DB_USER", "DB_PASS", "DB_HOST", "DB_PORT", "DBBRIDGE_PROFILE"):
@@ -29,7 +25,8 @@ def test_env_override(monkeypatch):
 
 
 def test_ini_fallback(tmp_path, monkeypatch):
-    ini = tmp_path / "cfg.ini"
+    # Create ~/.dbbridge.cfg in a temp home
+    ini = tmp_path / ".dbbridge.cfg"
     ini.write_text(
         "[DEFAULT]\n"
         "active = prof1\n"
@@ -40,8 +37,8 @@ def test_ini_fallback(tmp_path, monkeypatch):
         "user = user2\n"
         "password = pw2\n"
     )
-    # point at our test file as ~/.dbbridge.cfg
     monkeypatch.setenv("HOME", str(tmp_path))
+
     cfg = config.load_config()
     assert cfg["database"] == "db2"
     assert cfg["user"] == "user2"
