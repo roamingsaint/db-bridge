@@ -8,16 +8,13 @@ import pymysql.cursors
 from askuser import choose_from_db
 from colorfulPyPrint.py_color import print_cyan
 
-import config
+from . import config
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load default database credentials at import time
-DB_CREDS = config.load_config()
 
-
-def _none_to_null(sql_text: str) -> str:
+def replace_none_w_null(sql_text: str) -> str:
     """
     Replaces 'None' or "None" or None literals in SQL strings with SQL NULL.
     """
@@ -32,22 +29,12 @@ def _none_to_null(sql_text: str) -> str:
 
 
 def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
-            as_dict: bool = True, quiet: Optional[bool] = None,
-            none_to_null: bool = True, db_creds: Optional[dict] = None,
-            ) -> Any:
+            as_dict: bool = True, quiet: Optional[bool] = None, none_to_null: bool = True,
+            db_creds: Optional[dict] = None
+            ) -> Union[List[dict], int]:
     """
     Execute an SQL statement with optional parameterization.
-
-    - If `params` is provided, executes a parameterized query:
-        cursor.execute(sql, params)
-      ensuring proper escaping and injection safety.
-
-    - If `params` is None, executes raw SQL:
-        cursor.execute(sql)
-      optionally cleaning 'None'→NULL in the SQL string if `none_to_null` is True.
-
-    Permission checks (CREATE/DROP, UPDATE/DELETE without WHERE) are applied
-    on the raw SQL text.
+    If params is provided, runs a parameterized query; otherwise runs raw SQL.
 
     Args:
         sql: A native SQL query string, optionally using %s placeholders.
@@ -58,65 +45,54 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
         none_to_null: On raw SQL mode (params=None), replace 'None' literals with NULL.
 
     Returns:
-        SELECT -> List[dict] or List[tuple],
-        INSERT -> int (last row id),
-        UPDATE/DELETE -> int (affected rows count),
-        Other -> [].
-
+        SELECT -> List[dict] or List[tuple]
+        INSERT -> int (last row id)
+        UPDATE/DELETE -> int (affected rows count)
+        Other -> []
     Raises:
         Exception: on connection errors, permission violations, or SQL execution errors.
     """
-    # Load credentials
-    creds = db_creds or DB_CREDS
 
-    # Prepare SQL
+    # 1) Lazy-load credentials
+    creds = db_creds if db_creds is not None else config.load_config()
+
+    # 2) Prepare raw SQL
     raw_sql = sql.strip()
     if params is None and none_to_null:
-        raw_sql = _none_to_null(raw_sql)
+        raw_sql = replace_none_w_null(raw_sql)
 
-    # Permission guards
-    # If CREATE/DROP do not run
+    # 3) Permission guards
     if re.match(r'^(CREATE|DROP)', raw_sql, re.IGNORECASE):
         raise Exception(f"SQL PERMISSION ERROR: {raw_sql}\nCREATE/DROP not allowed")
-    # If UPDATE/DELETE do not run unless WHERE clause is present
     if re.match(r'^(UPDATE|DELETE)', raw_sql, re.IGNORECASE) and not re.search(r'WHERE', raw_sql, re.IGNORECASE):
         raise Exception(f"SQL ERROR: {raw_sql}\nUPDATE/DELETE requires WHERE clause")
 
-    # Connect
+    # 4) Connect (pass **creds so tests can monkeypatch load_config → {} )
     try:
-        conn = pymysql.connect(
-            host=creds["host"],
-            port=creds.get("port", 3306),
-            user=creds["user"],
-            password=creds["password"],
-            database=creds["database"],
-            cursorclass=(pymysql.cursors.DictCursor if as_dict else pymysql.cursors.Cursor)
-        )
+        cursor_cls = pymysql.cursors.DictCursor if as_dict else pymysql.cursors.Cursor
+        conn = pymysql.connect(cursorclass=cursor_cls, **creds)
     except Exception as e:
         logger.error("DB connection failed", exc_info=e)
         raise
 
     cursor = conn.cursor()
 
-    # Determine quiet default
+    # 5) Determine default for quiet
     if quiet is None:
-        if re.match(r'^(UPDATE|DELETE|INSERT)', raw_sql, re.IGNORECASE):
-            quiet = False
-        else:
-            quiet = True
+        quiet = False if re.match(r'^(UPDATE|DELETE|INSERT)', raw_sql, re.IGNORECASE) else True
 
     try:
         if not quiet:
             print_cyan(f"Running query:\n{raw_sql}")
         logger.info("Executing SQL: %s", raw_sql)
 
-        # Execute
+        # 6) Execute
         if params is not None:
             cursor.execute(raw_sql, params)
         else:
             cursor.execute(raw_sql)
 
-        # Process result
+        # 7) Handle results
         cmd = raw_sql.split()[0].upper()
         if cmd == "SELECT":
             rows = cursor.fetchall()

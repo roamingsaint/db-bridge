@@ -1,9 +1,8 @@
-# config.py
-
-import os
 import configparser
-from dotenv import load_dotenv
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Optional: load a .env file if python-dotenv is installed
 try:
@@ -14,9 +13,9 @@ except ImportError:
 
 def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
     """
-    1) If DB_NAME, DB_USER & DB_PASS are in ENV → use those.
-    2) Otherwise fallback to ~/.dbbridge.cfg:
-       - pick section from [DEFAULT] → active (or first section)
+    1) ENV-first: if DB_NAME/DB_USER/DB_PASS are set in .env, use those.
+    2) INI fallback: look for ~/.dbbridge.cfg, where ~ comes from HOME or USERPROFILE.
+       Section = [DEFAULT].active or first section.
     Returns a dict: host, port, database, user, password
     """
     # 1) ENV-first
@@ -26,14 +25,15 @@ def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
     if name and user and pwd:
         return {
             "host": os.getenv("DB_HOST", "localhost"),
-            "port": int(os.getenv("DB_PORT", "3306")),
+            "port": int(os.getenv("DB_PORT", 3306)),
             "database": name,
             "user": user,
             "password": pwd,
         }
 
     # 2) INI fallback
-    cfg_path = Path.home() / ".dbbridge.cfg"
+    home_dir = Path(os.getenv("HOME") or os.getenv("USERPROFILE") or Path.home())
+    cfg_path = home_dir / ".dbbridge.cfg"
     if not cfg_path.exists():
         raise RuntimeError(
             "No DB config found: set DB_NAME/DB_USER/DB_PASS in ENV, "
@@ -43,10 +43,9 @@ def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
     cfg = configparser.ConfigParser()
     cfg.read(cfg_path)
 
-    # choose which section to use
     active = os.getenv(profile_env_var) or cfg["DEFAULT"].get("active", None)
     if not active:
-        sections = [s for s in cfg.sections()]
+        sections = cfg.sections()
         if not sections:
             raise RuntimeError(f"No profiles defined in {cfg_path}")
         active = sections[0]
