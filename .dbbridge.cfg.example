@@ -1,0 +1,17 @@
+[DEFAULT]
+# set the default profile to use
+active = mysql
+
+[mysql]
+host     = localhost
+port     = 3306
+name     = dbname
+user     = username
+password = supersecret
+
+; [postgres]
+; host     = db.example.com
+; port     = 5432
+; name     = otherdb
+; user     = admin
+; password = hunter2
