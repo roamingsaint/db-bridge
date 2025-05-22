@@ -1,64 +1,195 @@
 # db-bridge
 
-**Effortless MySQL connectivity in Python, with flexible configuration via environment variables or INI profiles.**
+![PyPI Version](https://img.shields.io/pypi/v/db-bridge.svg)
 
-db-bridge is a lightweight Python library that provides:
-- **Zero boilerplate:** Run SQL queries with a single function call.
-- **12-factor config:** First-class support for environment variables (.env) and optional INI fallback (~/.db_bridge.cfg).
-- **Multi-profile:** Store multiple database connections in one config and switch via an environment variable.
-- **Extensible:** Easily add support for other databases in the future.
+A minimal, flexible Python SQL connector for MySQL—just pass native SQL queries as strings, with optional 12‑factor env or INI profile configuration.
+
+---
+
+## Table of Contents
+
+1. [Installation](#installation)  
+2. [Quick Start](#quick-start)  
+3. [Configuration](#configuration)  
+   - [Environment Variables (`.env`)](#environment-variables-env)  
+   - [INI Profile (`~/.dbbridge.cfg`)](#ini-profile-~dbbridgecfg)  
+4. [Usage Examples](#usage-examples)  
+   - [Simple Queries](#simple-queries)  
+   - [Parameterized Queries (Safe)](#parameterized-queries-safe)  
+   - [Handling NULL values](#handling-null-values)  
+   - [Advanced Helpers](#advanced-helpers)  
+5. [Testing](#testing)  
+6. [Contributing](#contributing)  
+7. [License](#license)
+
+---
 
 ## Installation
+
+Install the latest release from PyPI:
 
 ```bash
 pip install db-bridge
 ```
 
-## Quickstart
+For local development:
 
-1. **Configure**  
-   - **Env vars:** Create a `.env` in your project root:
+```bash
+git clone https://github.com/YourUsername/db-bridge.git
+cd db-bridge
+pip install -e .
+```
 
-     ```env
-     DB_HOST=localhost
-     DB_NAME=mydb
-     DB_USER=myuser
-     DB_PASS=mypassword
-     ```
+---
 
-   - **INI file:** Or edit `~/.db_bridge.cfg`:
+## Quick Start
 
-     ```ini
-     [DEFAULT]
-     active = mysql
+```python
+from db_bridge import run_sql, load_config
 
-     [mysql]
-     host = localhost
-     port = 3306
-     name = mydb
-     user = myuser
-     password = mypassword
-     ```
+# Optionally inspect loaded config
+print(load_config())
 
-2. **Use in your Python code**:
+# Execute a simple SELECT
+rows = run_sql("SELECT id, name FROM users")
+for row in rows:
+    print(row)
 
-    ```python
-    from db_bridge import run_sql
+# Execute an INSERT
+new_id = run_sql("INSERT INTO users (name,email) VALUES ('Alice','alice@example.com')")
+print(f"Inserted row ID: {new_id}")
+```
 
-    rows = run_sql("SELECT * FROM users")
-    for row in rows:
-        print(row)
-    ```
+---
 
 ## Configuration
 
-- **Environment variables:** `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`, optional `DB_PORT`.
-- **INI profiles:** `~/.db_bridge.cfg` with `[DEFAULT] active = profile` and sections for each DB.
+### Environment Variables (`.env`)
+
+Create a file named `.env` in your project root:
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=mydb
+DB_USER=myuser
+DB_PASS=mypassword
+# Optional: switch profile when multiple in INI
+# DBBRIDGE_PROFILE=prod
+```
+
+The package will load `.env` automatically if `python-dotenv` is installed.
+
+---
+
+### INI Profile (`~/.dbbridge.cfg`)
+
+For multiple database profiles, create `~/.dbridge.cfg`:
+
+```ini
+[DEFAULT]
+active = dev
+
+[dev]
+host = localhost
+port = 3306
+name = mydb_dev
+user = devuser
+password = devpass
+
+[prod]
+host = prod.db.example.com
+port = 3306
+name = mydb_prod
+user = produser
+password = prodpass
+```
+
+Switch profiles via:
+
+```bash
+export DBBRIDGE_PROFILE=prod
+```
+
+---
+
+## Usage Examples
+
+### Simple Queries
+
+```python
+# returns list of dicts by default
+users = run_sql("SELECT id, username FROM users")
+# as tuples
+users_tuples = run_sql("SELECT id, username FROM users", as_dict=False)
+```
+
+### Parameterized Queries (Safe)
+
+```python
+# Always prefer parameterized queries to avoid SQL injection
+email = "bob@example.com"
+rows = run_sql(
+    "SELECT id,name FROM users WHERE email = %s",
+    params=(email,),
+)
+```
+
+### Handling NULL values
+
+When calling raw SQL without params, you can enable automatic `None`→`NULL` cleanup:
+
+```python
+# passing Python None in SQL literal, none_to_null=True will convert to NULL
+rows = run_sql("SELECT * FROM orders WHERE shipped_date = None", none_to_null=True)
+```
+
+### Advanced Helpers
+
+```python
+from db_bridge.db_utils import get_column_values, get_column_values_regexp
+
+# Fetch single or multiple columns, prompt if multiple matches
+val = get_column_values(
+    "email","status",
+    table_name="users",
+    unique_column_name="username",
+    unique_column_value="alice",
+    primary_key="id",
+    as_tuple=False
+)
+print(val)
+
+# Fetch rows matching a regex pattern
+matches = get_column_values_regexp(
+    "id","username",
+    table_name="users",
+    unique_column_name="username",
+    unique_column_regexp="^a.*"
+)
+for m in matches:
+    print(m)
+```
+
+---
+
+## Testing
+
+Run the test suite with pytest:
+
+```bash
+pytest tests/
+```
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please open issues or pull requests on GitHub.
+Contributions welcome! Please open issues or pull requests.  
+Make sure to follow the existing style and add tests for new features.
+
+---
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License © 2025 Kanad Rishiraj (RoamingSaint)
