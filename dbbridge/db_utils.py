@@ -1,106 +1,148 @@
 import logging
 import re
 import sys
-from typing import Optional
+from typing import Optional, Tuple, Any, List
 
 import pymysql
 import pymysql.cursors
 from colorfulPyPrint.py_color import print_warning, input_white, print_error, print_blue, print_cyan
-from string_list import string_from_list
+from askuser import choose_from_db
 
 import config
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
+# Load default database credentials at import time
 DB_CREDS = config.load_config()
 
 
-# -- RUN SQL QUERY -- #
-def run_sql(sql, as_dict: bool = True, quiet: Optional[bool] = None, db_creds: Optional[dict] = None):
+def _none_to_null(sql_text: str) -> str:
     """
-    The run_sql function is a wrapper for the pymysql library. It allows you to run SQL queries against your database
-    without having to worry about connecting, disconnecting, or committing changes. The function takes in an SQL query
-    as a string and executes it.
-    Any results (for SELECT queries) are returned as a list of dictionaries or raw tuples if as_dict=False.
-    You can also pass in your own db_creds dictionary with host, passwd, user, database
-
-    :param sql: Pass the sql query to be executed
-    :param as_dict: bool: Determine if the results are returned as a list of dictionaries or tuples
-    :param quiet: Optional[bool]: Suppress output to the console
-    :param db_creds: Optional[dict]: Allow the function to be used with different dbs
-    :return: A list of dictionaries (if as_dict=true) or raw tuples (if as_dict=False)
+    Replaces 'None' or "None" or None literals in SQL strings with SQL NULL.
     """
-    # pick up default creds if none provided
-    if db_creds is None:
-        db_creds = config.load_config()
+    replacements = [
+        (r"'None'", "NULL"),
+        (r'"None"', "NULL"),
+        (r"None", "NULL"),
+    ]
+    for old, new in replacements:
+        sql_text = re.sub(old, new, sql_text)
+    return sql_text.strip()
 
-    sql = none_to_null(sql.strip())  # Replace any 'None'/None values with NULL
 
+def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
+            as_dict: bool = True, quiet: Optional[bool] = None,
+            none_to_null: bool = True, db_creds: Optional[dict] = None,
+            ) -> Any:
+    """
+    Execute an SQL statement with optional parameterization.
+
+    - If `params` is provided, executes a parameterized query:
+        cursor.execute(sql, params)
+      ensuring proper escaping and injection safety.
+
+    - If `params` is None, executes raw SQL:
+        cursor.execute(sql)
+      optionally cleaning 'None'→NULL in the SQL string if `none_to_null` is True.
+
+    Permission checks (CREATE/DROP, UPDATE/DELETE without WHERE) are applied
+    on the raw SQL text.
+
+    Args:
+        sql: A native SQL query string, optionally using %s placeholders.
+        params: Tuple of parameters to bind to the query (safe path).
+        as_dict: Return rows as list of dicts (True) or tuples (False) for SELECT.
+        quiet: If False, prints queries and row counts. Auto-determined if None.
+        db_creds: Override credentials dict (host, port, user, password, database).
+        none_to_null: On raw SQL mode (params=None), replace 'None' literals with NULL.
+
+    Returns:
+        SELECT -> List[dict] or List[tuple],
+        INSERT -> int (last row id),
+        UPDATE/DELETE -> int (affected rows count),
+        Other -> [].
+
+    Raises:
+        Exception: on connection errors, permission violations, or SQL execution errors.
+    """
+    # Load credentials
+    creds = db_creds or DB_CREDS
+
+    # Prepare SQL
+    raw_sql = sql.strip()
+    if params is None and none_to_null:
+        raw_sql = _none_to_null(raw_sql)
+
+    # Permission guards
     # If CREATE/DROP do not run
-    if re.search('^CREATE', sql, re.IGNORECASE) or re.search('^DROP', sql, re.IGNORECASE):
-        raise Exception(f"SQL PERMISSION ERROR: {sql}\nCan not run CREATE/DROP query")
+    if re.match(r'^(CREATE|DROP)', raw_sql, re.IGNORECASE):
+        raise Exception(f"SQL PERMISSION ERROR: {raw_sql}\nCREATE/DROP not allowed")
     # If UPDATE/DELETE do not run unless WHERE clause is present
-    if re.search('^UPDATE', sql, re.IGNORECASE) or re.search('^DELETE FROM', sql, re.IGNORECASE):
-        if not re.search('WHERE', sql, re.IGNORECASE):
-            raise Exception(f"SQL ERROR: {sql}\nCan not run UPDATE/DELETE query without WHERE clause")
+    if re.match(r'^(UPDATE|DELETE)', raw_sql, re.IGNORECASE) and not re.search(r'WHERE', raw_sql, re.IGNORECASE):
+        raise Exception(f"SQL ERROR: {raw_sql}\nUPDATE/DELETE requires WHERE clause")
 
-    # Connect to DB
+    # Connect
     try:
-        db = pymysql.connect(
-            host=db_creds["host"],
-            port=db_creds.get("port", 3306),
-            user=db_creds["user"],
-            password=db_creds["password"],
-            database=db_creds["database"]
+        conn = pymysql.connect(
+            host=creds["host"],
+            port=creds.get("port", 3306),
+            user=creds["user"],
+            password=creds["password"],
+            database=creds["database"],
+            cursorclass=(pymysql.cursors.DictCursor if as_dict else pymysql.cursors.Cursor)
         )
     except Exception as e:
-        logger.error(e)
-        raise e
+        logger.error("DB connection failed", exc_info=e)
+        raise
 
-    # If connection established, create cursor
-    if as_dict:
-        cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
-    else:
-        cursor = db.cursor()
+    cursor = conn.cursor()
 
-    # Set quiet based on query type if quiet is not explicitly defined
+    # Determine quiet default
     if quiet is None:
-        if re.search(r'^(UPDATE |DELETE FROM |INSERT )', sql, re.IGNORECASE):
+        if re.match(r'^(UPDATE|DELETE|INSERT)', raw_sql, re.IGNORECASE):
             quiet = False
         else:
             quiet = True
+
     try:
         if not quiet:
-            print_cyan(f"Running query: \n{sql}")
-        logger.info("Running query: %s" % sql)
-        cursor.execute(sql)
+            print_cyan(f"Running query:\n{raw_sql}")
+        logger.info("Executing SQL: %s", raw_sql)
 
-        if re.search('^SELECT', sql, re.IGNORECASE):  # SELECT query
-            if cursor.rowcount == 0:
-                return []
-            else:
-                rows = cursor.fetchall()
-                return rows
-        elif re.search('^INSERT', sql, re.IGNORECASE):  # INSERT query
-            db.commit()
-            if quiet is False:
-                print_cyan(f"{cursor.rowcount} rows were affected.", bold=True)
-            logger.info(f"{cursor.rowcount} rows were affected.")
-            return cursor.lastrowid
-        elif re.search(r'^(UPDATE |DELETE FROM )', sql, re.IGNORECASE):  # UPDATE/DELETE FROM query
-            db.commit()
-            print_cyan("{} rows were affected.".format(cursor.rowcount), bold=True)
-            logger.info(f"{cursor.rowcount} rows were affected.")
+        # Execute
+        if params is not None:
+            cursor.execute(raw_sql, params)
         else:
-            raise ValueError(f"Unknown query type in {sql}")
+            cursor.execute(raw_sql)
+
+        # Process result
+        cmd = raw_sql.split()[0].upper()
+        if cmd == "SELECT":
+            rows = cursor.fetchall()
+            return rows or []
+        elif cmd == "INSERT":
+            conn.commit()
+            if not quiet:
+                print_cyan(f"{cursor.rowcount} rows affected.", bold=True)
+            logger.info("%d rows affected.", cursor.rowcount)
+            return cursor.lastrowid
+        elif cmd in ("UPDATE", "DELETE"):
+            conn.commit()
+            if not quiet:
+                print_cyan(f"{cursor.rowcount} rows affected.", bold=True)
+            logger.info("%d rows affected.", cursor.rowcount)
+            return cursor.rowcount
+        else:
+            # Other commands (e.g., DDL)
+            conn.commit()
+            return []
     except Exception as e:
-        logger.error(e)
-        raise e
+        logger.error("SQL execution failed", exc_info=e)
+        raise
     finally:
         cursor.close()
-        db.close()
-        # print(rows)
+        conn.close()
 
 
 def get_column_values(*columns_to_return, table_name, unique_column_name, unique_column_value, as_tuple=True):
