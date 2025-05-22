@@ -1,8 +1,8 @@
 import pytest
 import pymysql
 
-from dbbridge.db_utils import run_sql
-from dbbridge import config
+from db_bridge.db_utils import run_sql
+from db_bridge import config
 
 
 class DummyCursor:

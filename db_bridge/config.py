@@ -11,10 +11,10 @@ except ImportError:
     pass
 
 
-def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
+def load_config(profile_env_var: str = "DB_BRIDGE_PROFILE") -> dict:
     """
     1) ENV-first: if DB_NAME/DB_USER/DB_PASS are set in .env, use those.
-    2) INI fallback: look for ~/.dbbridge.cfg, where ~ comes from HOME or USERPROFILE.
+    2) INI fallback: look for ~/.db_bridge.cfg, where ~ comes from HOME or USERPROFILE.
        Section = [DEFAULT].active or first section.
     Returns a dict: host, port, database, user, password
     """
@@ -33,11 +33,11 @@ def load_config(profile_env_var: str = "DBBRIDGE_PROFILE") -> dict:
 
     # 2) INI fallback
     home_dir = Path(os.getenv("HOME") or os.getenv("USERPROFILE") or Path.home())
-    cfg_path = home_dir / ".dbbridge.cfg"
+    cfg_path = home_dir / ".db_bridge.cfg"
     if not cfg_path.exists():
         raise RuntimeError(
             "No DB config found: set DB_NAME/DB_USER/DB_PASS in ENV, "
-            "or create ~/.dbbridge.cfg"
+            "or create ~/.db_bridge.cfg"
         )
 
     cfg = configparser.ConfigParser()

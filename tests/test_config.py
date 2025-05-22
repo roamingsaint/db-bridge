@@ -1,12 +1,12 @@
 import pytest
 
-from dbbridge import config
+from db_bridge import config
 
 
 # clear any ENV vars that might interfere
 @pytest.fixture(autouse=True)
 def clear_env(monkeypatch):
-    for var in ("DB_NAME", "DB_USER", "DB_PASS", "DB_HOST", "DB_PORT", "DBBRIDGE_PROFILE"):
+    for var in ("DB_NAME", "DB_USER", "DB_PASS", "DB_HOST", "DB_PORT", "DB_BRIDGE_PROFILE"):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -26,8 +26,8 @@ def test_env_override(monkeypatch):
 
 
 def test_ini_fallback(tmp_path, monkeypatch):
-    # Create a fake ~/.dbbridge.cfg
-    ini = tmp_path / ".dbbridge.cfg"
+    # Create a fake ~/.db_bridge.cfg
+    ini = tmp_path / ".db_bridge.cfg"
     ini.write_text(
         "[DEFAULT]\n"
         "active = prof1\n"

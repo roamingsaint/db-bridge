@@ -1,10 +1,9 @@
 [project]
-name = "dbbridge"
-version = "0.1.1"
+name = "db-bridge"
+version = "0.1.0"
 description = "Simple SQL connector — pass native SQL queries as strings with zero boilerplate."
 readme = "README.md"
 authors = [{name = "Kanad Rishiraj (RoamingSaint)", email = "roamingsaint27@gmail.com"}]
-license = { file="LICENSE" }
 requires-python = ">=3.7"
 dependencies = [
   "pymysql>=1.0",
@@ -19,4 +18,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dbbridge*"]
+include = ["db_bridge*"]
