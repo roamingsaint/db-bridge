@@ -145,7 +145,8 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
         conn.close()
 
 
-def get_column_values(*columns_to_return, table_name, unique_column_name, unique_column_value, as_tuple=True):
+def get_column_values(*columns_to_return: str, table_name: str, unique_column_name: str, unique_column_value: Any,
+                      primary_key:str = 'id', as_tuple: bool = True) -> Any:
     """
     Retrieve specified column values from a database table based on a unique column value.
 
@@ -158,6 +159,7 @@ def get_column_values(*columns_to_return, table_name, unique_column_name, unique
         table_name (str): The name of the table to query.
         unique_column_name (str): The name of the unique column to filter by.
         unique_column_value (str/int): The exact value to match in `unique_column_name`.
+        primary_key (str): Default: 'id'. Primary_key of the table. Helps choose if there are multiple values.
         as_tuple (bool): If True, returns the result as a tuple in the order of `columns_to_return`;
                          if False, returns as a dictionary.
 
@@ -168,56 +170,43 @@ def get_column_values(*columns_to_return, table_name, unique_column_name, unique
     Raises:
         Exception: If an error occurs during SQL execution.
     """
-    try:
-        # Build SQL query
-        sql = "SELECT "
-        sql += "id, " if "id" not in columns_to_return else ""  # 'id' tp help if multiple results. Is dropped later.
-        sql += f"{','.join(columns_to_return)} FROM {table_name} WHERE {unique_column_name}='{unique_column_value}'"
+    # Build a parameterized SQL string
+    cols = ",".join(columns_to_return)
+    # ensure primary_key is selected if needed
+    select_cols = (
+        f"{primary_key}, {cols}"
+        if primary_key not in columns_to_return
+        else cols
+    )
+    sql = f"SELECT {select_cols} FROM {table_name} WHERE {unique_column_name} = %s"
+    # Run with parameter binding for safety
+    rows: List[dict] = run_sql(sql, params=(unique_column_value,), as_dict=True)
 
-        # Execute SQL query
-        result = run_sql(sql)
-    except Exception as e:
-        raise Exception(f"SQL Execution Error: {e}")
+    if not rows:
+        return None
 
-    # Handle query results based on number of matching rows
-    if len(result) == 0:
-        return None  # No results found
-    elif len(result) > 1:
-        print_warning("Multiple results found!")
-
-        # Create options for user to select correct record by 'id'
-        choices = {f"{s['id']}": s for s in result}
-        readable_choices = {f"{s['id']}": string_from_list([f'{k}: {v}' for k, v in s.items()], delim=' | ') for s in
-                            result}
-
-        # Display available choices to the user
-        for k, v in readable_choices.items():
-            print_blue(f'{k}: ', end='')
-            print(f'{v}')
-
-        # Prompt user to select an id
-        while True:
-            opt_id = input_white("Choose the correct id: ")
-            if opt_id not in readable_choices.keys():
-                print_error(f"Only choices allowed are {list(readable_choices.keys())}")
-            else:
-                break
-
-        return_val = choices[opt_id]
+    if len(rows) > 1:
+        chosen_id, chosen_row = choose_from_db(
+            rows,
+            input_msg=f"Select the correct {table_name} {primary_key}",
+            primary_key=primary_key,
+            table_desc=f"{table_name} matches for {unique_column_value}",
+            xq=False
+        )
+        row = chosen_row
     else:
-        return_val = result[0]  # Single match found, no user input required
+        row = rows[0]  # Single match found, no user input required
 
-    # Return the result as either a tuple or a dictionary
+    # If caller wants a tuple
     if as_tuple:
-        # For a single column, return a scalar; for multiple columns, return a tuple
-        return return_val[columns_to_return[0]] if len(columns_to_return) == 1 \
-            else tuple([return_val[col] for col in columns_to_return])
-    else:
-        # Remove 'id' if it was added for handling multiple results and not requested
-        if "id" not in columns_to_return:
-            return_val.pop('id')
-        return return_val
+        if len(columns_to_return) == 1:
+            return row[columns_to_return[0]]
+        return tuple(row[col] for col in columns_to_return)
 
+    # as_dict: drop the primary_key if it was not requested
+    if primary_key not in columns_to_return:
+        row.pop(primary_key, None)
+    return row
 
 def get_column_values_regexp(*columns_to_return, table_name, unique_column_name, unique_column_regexp):
     """
