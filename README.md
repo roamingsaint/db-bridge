@@ -1,8 +1,8 @@
-# db_bridge
+# db-bridge
 
 **Effortless MySQL connectivity in Python, with flexible configuration via environment variables or INI profiles.**
 
-db_bridge is a lightweight Python library that provides:
+db-bridge is a lightweight Python library that provides:
 - **Zero boilerplate:** Run SQL queries with a single function call.
 - **12-factor config:** First-class support for environment variables (.env) and optional INI fallback (~/.db_bridge.cfg).
 - **Multi-profile:** Store multiple database connections in one config and switch via an environment variable.
