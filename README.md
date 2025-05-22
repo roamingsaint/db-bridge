@@ -1,7 +1,5 @@
 # db-bridge
 
-![PyPI Version](https://img.shields.io/pypi/v/db-bridge.svg)
-
 A minimal, flexible Python SQL connector for MySQL—just pass native SQL queries as strings, with optional 12‑factor env or INI profile configuration.
 
 ---
