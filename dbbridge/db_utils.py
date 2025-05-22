@@ -1,12 +1,12 @@
 import logging
 import re
 import sys
-from typing import Optional, Tuple, Any, List
+from typing import Optional, Tuple, Any, List, Union
 
 import pymysql
 import pymysql.cursors
-from colorfulPyPrint.py_color import print_warning, input_white, print_error, print_blue, print_cyan
 from askuser import choose_from_db
+from colorfulPyPrint.py_color import print_cyan
 
 import config
 
@@ -146,7 +146,7 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
 
 
 def get_column_values(*columns_to_return: str, table_name: str, unique_column_name: str, unique_column_value: Any,
-                      primary_key:str = 'id', as_tuple: bool = True) -> Any:
+                      primary_key: str = 'id', as_tuple: bool = True) -> Union[None, Tuple, dict]:
     """
     Retrieve specified column values from a database table based on a unique column value.
 
@@ -164,8 +164,9 @@ def get_column_values(*columns_to_return: str, table_name: str, unique_column_na
                          if False, returns as a dictionary.
 
     Returns:
-        dict or tuple: Returns either a dictionary or tuple of column values for the matching row.
-                       Returns None if no matches are found.
+      - None if no matches
+      - A tuple of values (in order of columns_to_return) if as_tuple=True
+      - A dict of {column: value} if as_tuple=False
 
     Raises:
         Exception: If an error occurs during SQL execution.
@@ -208,27 +209,28 @@ def get_column_values(*columns_to_return: str, table_name: str, unique_column_na
         row.pop(primary_key, None)
     return row
 
-def get_column_values_regexp(*columns_to_return, table_name, unique_column_name, unique_column_regexp):
+
+def get_column_values_regexp(*columns_to_return: str, table_name: str,
+                             unique_column_name: str, unique_column_regexp: str
+                             ) -> List[dict]:
     """
     Returns column values based on tbl_name, unique_column_name and a REGEXP for unique_column_name's value
      - ** NOTE: WILL return multiple values **
-    Example:
-    :param columns_to_return: list of columns whose value is returned
-    :param table_name: table to lookup
-    :param unique_column_name: name of unique_column in the table
-    :param unique_column_regexp: REGEXP to match in unique_column_value
-    :return: dict of all columns values that match the REGEXP for the unique_column
-    """
-    try:
-        result = run_sql(f"SELECT {','.join(columns_to_return)} "
-                         f"FROM {table_name} WHERE {unique_column_name} REGEXP '{unique_column_regexp}'")
-    except Exception as e:
-        raise Exception(e)
 
-    if len(result) > 1:
-        print_warning(f"Multiple ({len(result)}) results found!")
-        return result
-    elif len(result) == 0:
-        return None
-    else:
-        return result
+    Args:
+        columns_to_return: Columns to select.
+        table_name: Table name.
+        unique_column_name: Column against which to apply the REGEXP.
+        unique_column_regexp: The REGEXP pattern to match.
+
+    Returns:
+        List[dict]: One dict per matching row. [] list if no matches.
+    """
+    # Build a parameterized query to avoid injection
+    cols = ",".join(columns_to_return)
+    sql = f"SELECT {cols} FROM {table_name} WHERE {unique_column_name} REGEXP %s"
+
+    # Use run_sql with params; always returns list of dicts
+    rows = run_sql(sql, params=(unique_column_regexp,), as_dict=True)
+
+    return rows  # Returns [] if no matches found
