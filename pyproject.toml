@@ -10,9 +10,11 @@ requires-python = ">=3.7"
 dependencies = [
   "pymysql>=1.0",
   "AskUser>=0.1.1",
-  "colorfulPyPrint>=0.1",
   "python-dotenv>=0.21"
 ]
+
+[project.optional-dependencies]
+color = ["colorfulPyPrint>=0.1"]
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]

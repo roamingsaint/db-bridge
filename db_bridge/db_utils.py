@@ -6,12 +6,33 @@ from typing import Optional, Tuple, Any, List, Union
 import pymysql
 import pymysql.cursors
 from askuser import choose_from_db
-from colorfulPyPrint.py_color import print_cyan
+
+# Attempt to import print_cyan; if missing, define a no-op
+try:
+    from colorfulPyPrint.py_color import print_cyan
+    COLOR_PRINT = True
+except ImportError:
+    COLOR_PRINT = False
+
+    def print_cyan():
+        pass
 
 from . import config
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _info_message(msg: str, *, color_msg: Optional[str] = None):
+    """
+    Show an informational message. If colorfulPyPrint is installed,
+    use print_cyan(color_msg); otherwise, use logger.info(msg).
+    color_msg may be different (e.g. no ANSI codes) from msg.
+    """
+    if COLOR_PRINT and color_msg is not None:
+        print_cyan(color_msg)
+    else:
+        logger.info(msg)
 
 
 def replace_none_w_null(sql_text: str) -> str:
@@ -61,13 +82,13 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
     if params is None and none_to_null:
         raw_sql = replace_none_w_null(raw_sql)
 
-    # 3) Permission guards
+    # 3) Permission guards (CREATE/DROP, UPDATE/DELETE without WHERE)
     if re.match(r'^(CREATE|DROP)', raw_sql, re.IGNORECASE):
         raise Exception(f"SQL PERMISSION ERROR: {raw_sql}\nCREATE/DROP not allowed")
     if re.match(r'^(UPDATE|DELETE)', raw_sql, re.IGNORECASE) and not re.search(r'WHERE', raw_sql, re.IGNORECASE):
         raise Exception(f"SQL ERROR: {raw_sql}\nUPDATE/DELETE requires WHERE clause")
 
-    # 4) Connect (pass **creds so tests can monkeypatch load_config → {} )
+    # 4) Connect
     try:
         cursor_cls = pymysql.cursors.DictCursor if as_dict else pymysql.cursors.Cursor
         conn = pymysql.connect(cursorclass=cursor_cls, **creds)
@@ -79,7 +100,6 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
 
     # 5) Build final SQL for logging, if possible
     final_sql = raw_sql
-
     if params is not None:
         # Only attempt mogrify if the cursor actually supports it
         if hasattr(cursor, "mogrify"):
@@ -87,10 +107,9 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
                 mogrified = cursor.mogrify(raw_sql, params)
                 # PyMySQL’s mogrify returns bytes, so decode if needed
                 final_sql = mogrified.decode() if isinstance(mogrified, bytes) else mogrified
-            except (TypeError, ValueError) as e:
-                # If mogrify fails (e.g. mismatched placeholder count), log both raw_sql and params
+            except (AttributeError, TypeError, ValueError) as e:
                 logger.warning(
-                    "Could not mogrify SQL with params %r: %s. Logging raw SQL and params separately.",
+                    "Could not mogrify SQL with params %r: %s. Falling back to raw SQL.",
                     params,
                     e,
                 )
@@ -105,33 +124,33 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
         quiet = False if re.match(r'^(UPDATE|DELETE|INSERT)', raw_sql, re.IGNORECASE) else True
 
     try:
+        # 7) Show or log the SQL before executing
         if not quiet:
-            print_cyan(f"Running query:\n{final_sql}")
-        logger.info("Executing SQL: %s", final_sql)
+            _info_message(final_sql, color_msg=final_sql)
 
-        # 7) Execute
+        # 8) Execute
         if params is not None:
             cursor.execute(raw_sql, params)
         else:
             cursor.execute(raw_sql)
 
-        # 8) Handle results
+        # 9) Handle results
         cmd = raw_sql.split()[0].upper()
         if cmd == "SELECT":
             rows = cursor.fetchall()
             return rows or []
         elif cmd == "INSERT":
             conn.commit()
+            affected = cursor.rowcount
             if not quiet:
-                print_cyan(f"{cursor.rowcount} rows affected.", bold=True)
-            logger.info("%d rows affected.", cursor.rowcount)
+                _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.")
             return cursor.lastrowid
         elif cmd in ("UPDATE", "DELETE"):
             conn.commit()
+            affected = cursor.rowcount
             if not quiet:
-                print_cyan(f"{cursor.rowcount} rows affected.", bold=True)
-            logger.info("%d rows affected.", cursor.rowcount)
-            return cursor.rowcount
+                _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.")
+            return affected
         else:
             # Other commands (e.g., DDL)
             conn.commit()
@@ -179,7 +198,6 @@ def get_column_values(*columns_to_return: str, table_name: str, unique_column_na
         else cols
     )
     sql = f"SELECT {select_cols} FROM {table_name} WHERE {unique_column_name} = %s"
-    # Run with parameter binding for safety
     rows: List[dict] = run_sql(sql, params=(unique_column_value,), as_dict=True)
 
     if not rows:
@@ -225,11 +243,7 @@ def get_column_values_regexp(*columns_to_return: str, table_name: str,
     Returns:
         List[dict]: One dict per matching row. [] list if no matches.
     """
-    # Build a parameterized query to avoid injection
     cols = ",".join(columns_to_return)
     sql = f"SELECT {cols} FROM {table_name} WHERE {unique_column_name} REGEXP %s"
-
-    # Use run_sql with params; always returns list of dicts
     rows = run_sql(sql, params=(unique_column_regexp,), as_dict=True)
-
     return rows  # Returns [] if no matches found

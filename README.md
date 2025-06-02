@@ -30,6 +30,12 @@ Install the latest release from PyPI:
 pip install db-bridge
 ```
 
+To enable colorful console output (requires `colorfulPyPrint`), install with the `color` extra:
+
+```bash
+pip install db-bridge[color]
+```
+
 For local development:
 
 ```bash
@@ -82,7 +88,7 @@ The package will load `.env` automatically if `python-dotenv` is installed.
 
 ### INI Profile (`~/.dbbridge.cfg`)
 
-For multiple database profiles, create `~/.dbridge.cfg`:
+For multiple database profiles, create `~/.dbbridge.cfg`:
 
 ```ini
 [DEFAULT]
@@ -149,7 +155,7 @@ from db_bridge.db_utils import get_column_values, get_column_values_regexp
 
 # Fetch single or multiple columns, prompt if multiple matches
 val = get_column_values(
-    "email","status",
+    "email", "status",
     table_name="users",
     unique_column_name="username",
     unique_column_value="alice",
@@ -160,7 +166,7 @@ print(val)
 
 # Fetch rows matching a regex pattern
 matches = get_column_values_regexp(
-    "id","username",
+    "id", "username",
     table_name="users",
     unique_column_name="username",
     unique_column_regexp="^a.*"
