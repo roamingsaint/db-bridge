@@ -7,14 +7,14 @@ import pymysql
 import pymysql.cursors
 from askuser import choose_from_db
 
-# Attempt to import print_cyan; if missing, define a no-op
+# Attempt to import print_custom; if missing, define a no-op
 try:
-    from colorfulPyPrint.py_color import print_cyan
+    from colorfulPyPrint.py_color import print_custom
     COLOR_PRINT = True
 except ImportError:
     COLOR_PRINT = False
 
-    def print_cyan():
+    def print_custom():
         pass
 
 from . import config
@@ -23,14 +23,15 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _info_message(msg: str, *, color_msg: Optional[str] = None):
+def _info_message(msg: str, *, color_msg: Optional[str] = None, color='cyan'):
     """
     Show an informational message. If colorfulPyPrint is installed,
-    use print_cyan(color_msg); otherwise, use logger.info(msg).
+    use print_custom(color_msg); otherwise, use logger.info(msg).
     color_msg may be different (e.g. no ANSI codes) from msg.
+    Check colorfulPyPrint.py_color.print_custom for allowed color options
     """
     if COLOR_PRINT and color_msg is not None:
-        print_cyan(color_msg)
+        print_custom(f"<{color}:{color_msg}>")
     else:
         logger.info(msg)
 
@@ -126,7 +127,7 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
     try:
         # 7) Show or log the SQL before executing
         if not quiet:
-            _info_message(final_sql, color_msg=final_sql)
+            _info_message(final_sql, color_msg=final_sql, color="cyan")
 
         # 8) Execute
         if params is not None:
@@ -143,13 +144,13 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
             conn.commit()
             affected = cursor.rowcount
             if not quiet:
-                _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.")
+                _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.", color="bold_cyan")
             return cursor.lastrowid
         elif cmd in ("UPDATE", "DELETE"):
             conn.commit()
             affected = cursor.rowcount
             if not quiet:
-                _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.")
+                _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.", color="bold_cyan")
             return affected
         else:
             # Other commands (e.g., DDL)

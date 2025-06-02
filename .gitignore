@@ -15,3 +15,6 @@ dist/
 # IDEs
 .vscode/
 .idea/
+
+# Project Specific
+/_ROUGH/
