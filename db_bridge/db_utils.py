@@ -79,23 +79,26 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
 
     # 5) Build final SQL for logging, if possible
     final_sql = raw_sql
+
     if params is not None:
         # Only attempt mogrify if the cursor actually supports it
         if hasattr(cursor, "mogrify"):
             try:
                 mogrified = cursor.mogrify(raw_sql, params)
-                # pymysql returns bytes for mogrify, so decode if needed
-                if isinstance(mogrified, bytes):
-                    final_sql = mogrified.decode()
-                else:
-                    final_sql = mogrified
+                # PyMySQL’s mogrify returns bytes, so decode if needed
+                final_sql = mogrified.decode() if isinstance(mogrified, bytes) else mogrified
             except (TypeError, ValueError) as e:
-                # If mogrify fails (e.g. wrong param types), fall back
-                logger.warning("Could not mogrify SQL with params (%r): %s. Using raw SQL for logging.", params, e,)
-                final_sql = raw_sql
+                # If mogrify fails (e.g. mismatched placeholder count), log both raw_sql and params
+                logger.warning(
+                    "Could not mogrify SQL with params %r: %s. Logging raw SQL and params separately.",
+                    params,
+                    e,
+                )
+                final_sql = raw_sql + f"  -- params: {params!r}"
         else:
-            # Cursor has no mogrify (e.g. a custom cursor); log raw SQL
-            final_sql = raw_sql
+            # Cursor has no mogrify (unlikely with PyMySQL, but just in case)
+            final_sql = raw_sql + f"  -- params: {params!r}"
+    # else: params is None → caller passed full SQL; final_sql stays as raw_sql
 
     # 6) Determine default for quiet
     if quiet is None:
