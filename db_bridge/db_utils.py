@@ -77,22 +77,42 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
 
     cursor = conn.cursor()
 
-    # 5) Determine default for quiet
+    # 5) Build final SQL for logging, if possible
+    final_sql = raw_sql
+    if params is not None:
+        # Only attempt mogrify if the cursor actually supports it
+        if hasattr(cursor, "mogrify"):
+            try:
+                mogrified = cursor.mogrify(raw_sql, params)
+                # pymysql returns bytes for mogrify, so decode if needed
+                if isinstance(mogrified, bytes):
+                    final_sql = mogrified.decode()
+                else:
+                    final_sql = mogrified
+            except (TypeError, ValueError) as e:
+                # If mogrify fails (e.g. wrong param types), fall back
+                logger.warning("Could not mogrify SQL with params (%r): %s. Using raw SQL for logging.", params, e,)
+                final_sql = raw_sql
+        else:
+            # Cursor has no mogrify (e.g. a custom cursor); log raw SQL
+            final_sql = raw_sql
+
+    # 6) Determine default for quiet
     if quiet is None:
         quiet = False if re.match(r'^(UPDATE|DELETE|INSERT)', raw_sql, re.IGNORECASE) else True
 
     try:
         if not quiet:
-            print_cyan(f"Running query:\n{raw_sql}")
-        logger.info("Executing SQL: %s", raw_sql)
+            print_cyan(f"Running query:\n{final_sql}")
+        logger.info("Executing SQL: %s", final_sql)
 
-        # 6) Execute
+        # 7) Execute
         if params is not None:
             cursor.execute(raw_sql, params)
         else:
             cursor.execute(raw_sql)
 
-        # 7) Handle results
+        # 8) Handle results
         cmd = raw_sql.split()[0].upper()
         if cmd == "SELECT":
             rows = cursor.fetchall()
