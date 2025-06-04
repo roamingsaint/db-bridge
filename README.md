@@ -10,7 +10,7 @@ A minimal, flexible Python SQL connector for MySQL—just pass native SQL querie
 2. [Quick Start](#quick-start)  
 3. [Configuration](#configuration)  
    - [Environment Variables (`.env`)](#environment-variables-env)  
-   - [INI Profile (`~/.dbbridge.cfg`)](#ini-profile-~dbbridgecfg)  
+   - [INI Profile (`~/.db_bridge.cfg`)](#ini-profile-~db_bridgecfg)  
 4. [Usage Examples](#usage-examples)  
    - [Simple Queries](#simple-queries)  
    - [Parameterized Queries (Safe)](#parameterized-queries-safe)  
@@ -86,9 +86,9 @@ The package will load `.env` automatically if `python-dotenv` is installed.
 
 ---
 
-### INI Profile (`~/.dbbridge.cfg`)
+### INI Profile (`~/.db_bridge.cfg`)
 
-For multiple database profiles, create `~/.dbbridge.cfg`:
+For multiple database profiles, create `~/.db_bridge.cfg`:
 
 ```ini
 [DEFAULT]

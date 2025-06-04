@@ -1,6 +1,6 @@
 [project]
 name = "db-bridge"
-version = "0.2.1"
+version = "0.2.2"
 description = "Simple SQL connector — pass native SQL queries as strings with zero boilerplate."
 readme = "README.md"
 authors = [{name = "Kanad Rishiraj (RoamingSaint)", email = "roamingsaint27@gmail.com"}]
