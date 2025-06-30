@@ -87,7 +87,7 @@ That file will be used **only if it exists**; otherwise `~/.db_bridge.cfg` is lo
 
 ### INI Profiles (`~/.db_bridge.cfg`)
 
-For multiple databases (MySQL, SQLite, Postgres, or multiple MySQL clusters), define profiles in:
+For multiple databases (MySQL, SQLite, PostgreSQL, or multiple instances of any), define profiles in:
 
 ```ini
 [DEFAULT]
@@ -123,7 +123,7 @@ password = pgpass
 ```
 
 - **Default** profile is the one named by `[DEFAULT] active`.  
-- Callers can still pick any profile at runtime via the `profile` parameter (see below).  
+- Callers can override at runtime with the `profile` parameter (see below).  
 
 ---
 
@@ -149,13 +149,44 @@ rows = run_sql(
 )
 ```
 
-### Handling NULL values
+### Multiple Profiles
 
-When calling raw SQL without params, you can enable automatic `None`→`NULL` cleanup:
+Use the default profile:
 
 ```python
-# passing Python None in SQL literal, none_to_null=True will convert to NULL
-rows = run_sql("SELECT * FROM orders WHERE shipped_date = None", none_to_null=True)
+run_sql("SELECT * FROM my_table")
+```
+
+Explicitly target another INI profile:
+
+```python
+# MySQL production
+run_sql("SELECT * FROM orders", profile="prod_db")
+
+# SQLite local
+run_sql("SELECT * FROM items", profile="sqlite_local")
+
+# PostgreSQL analytics
+run_sql("SELECT count(*) FROM events", profile="postgres_analytics")
+```
+
+Or supply a custom creds dict directly:
+
+```python
+creds = {"driver":"sqlite","database":"/tmp/test.db"}
+run_sql("SELECT * FROM foo", db_creds=creds)
+```
+
+### Handling NULL values
+
+When you pass raw SQL without parameters, you can convert Python `None` → SQL `NULL`:
+
+```python
+# None in SQL literal becomes NULL
+rows = run_sql(
+    "SELECT * FROM orders WHERE shipped_date = None",
+    none_to_null=True
+)
 ```
 
 ### Advanced Helpers
