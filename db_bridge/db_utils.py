@@ -1,18 +1,24 @@
+# db_bridge/db_utils.py
+
 import logging
 import re
 import sys
-from typing import Optional, Tuple, Any, List, Union
+from typing import Optional, Tuple, Any, List, Union, Dict
 
-import pymysql
-import pymysql.cursors
 from askuser import choose_from_db
+
+from .mysql_utils import MySQLBridge
+from .postgres_utils import PostgresBridge
+from .sqlite_utils import SQLiteBridge
 
 # Attempt to import print_custom; if missing, define a no-op
 try:
     from colorfulPyPrint.py_color import print_custom
+
     COLOR_PRINT = True
 except ImportError:
     COLOR_PRINT = False
+
 
     def print_custom():
         pass
@@ -21,6 +27,18 @@ from . import config
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class DBBridgeError(Exception):
+    """Base exception for db-bridge errors."""
+
+
+class SQLPermissionError(DBBridgeError):
+    """Raised when a disallowed SQL command is attempted."""
+
+
+class SQLExecutionError(DBBridgeError):
+    """Raised when SQL execution fails (wraps the original error)."""
 
 
 def _info_message(msg: str, *, color_msg: Optional[str] = None, color='cyan'):
@@ -50,54 +68,64 @@ def replace_none_w_null(sql_text: str) -> str:
     return sql_text.strip()
 
 
-def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
-            as_dict: bool = True, quiet: Optional[bool] = None, none_to_null: bool = True,
-            db_creds: Optional[dict] = None
-            ) -> Union[List[dict], int]:
+def run_sql(
+        sql: str,
+        params: Optional[Tuple[Any, ...]] = None,
+        *,
+        as_dict: bool = True,
+        quiet: Optional[bool] = None,
+        none_to_null: bool = True,
+        profile: str = None,
+        db_creds: Optional[dict] = None
+) -> Union[List[dict], int]:
     """
-    Execute an SQL statement with optional parameterization.
-    If params is provided, runs a parameterized query; otherwise runs raw SQL.
+    Execute an SQL statement with optional parameterization against a chosen DB profile.
 
     Args:
-        sql: A native SQL query string, optionally using %s placeholders.
-        params: Tuple of parameters to bind to the query (safe path).
-        as_dict: Return rows as list of dicts (True) or tuples (False) for SELECT.
-        quiet: If False, prints queries and row counts. Auto-determined if None.
-        db_creds: Override credentials dict (host, port, user, password, database).
-        none_to_null: On raw SQL mode (params=None), replace 'None' literals with NULL.
+        sql:          SQL query string (use %s placeholders in all drivers).
+        params:       Parameters tuple for safe parameterized queries.
+        as_dict:      Return rows as dicts (True) or tuples (False).
+        quiet:        Suppress SQL and row-count output if True.
+        none_to_null: Replace literal None in raw SQL with SQL NULL.
+        profile:      INI section name to use (falls back to [DEFAULT].active).
+        db_creds:     Direct credentials dict; mutually exclusive with profile.
 
     Returns:
-        SELECT -> List[dict] or List[tuple]
-        INSERT -> int (last row id)
-        UPDATE/DELETE -> int (affected rows count)
-        Other -> []
+        List of rows (dict or tuple) for SELECT; rowcount/lastrowid for writes.
+
     Raises:
-        Exception: on connection errors, permission violations, or SQL execution errors.
+        ValueError: If both `profile` and `db_creds` are given.
+        Exception: On SQL permission errors or execution failures.
     """
 
-    # 1) Lazy-load credentials
-    creds = db_creds if db_creds is not None else config.load_config()
+    # 1) Credentials: either db_creds or an INI profile (never both)
+    if db_creds and profile:
+        raise ValueError("Specify only one of db_creds or profile, not both.")
+    creds = db_creds if db_creds else config.load_config(profile)
+    driver = creds.get("driver", "mysql").lower()
 
     # 2) Prepare raw SQL
     raw_sql = sql.strip()
     if params is None and none_to_null:
         raw_sql = replace_none_w_null(raw_sql)
 
-    # 3) Permission guards (CREATE/DROP, UPDATE/DELETE without WHERE)
-    if re.match(r'^(CREATE|DROP)', raw_sql, re.IGNORECASE):
-        raise Exception(f"SQL PERMISSION ERROR: {raw_sql}\nCREATE/DROP not allowed")
+    # 3) Permission guards (Not allowed: CREATE/DROP, UPDATE/DELETE without WHERE)
+    if driver != "sqlite" and re.match(r'^(CREATE|DROP)', raw_sql, re.IGNORECASE):
+        raise SQLPermissionError(f"Disallowed DDL on non-SQLite driver: {raw_sql}")
     if re.match(r'^(UPDATE|DELETE)', raw_sql, re.IGNORECASE) and not re.search(r'WHERE', raw_sql, re.IGNORECASE):
-        raise Exception(f"SQL ERROR: {raw_sql}\nUPDATE/DELETE requires WHERE clause")
+        raise SQLPermissionError(f"UPDATE/DELETE requires WHERE clause: {raw_sql}")
 
-    # 4) Connect
-    try:
-        cursor_cls = pymysql.cursors.DictCursor if as_dict else pymysql.cursors.Cursor
-        conn = pymysql.connect(cursorclass=cursor_cls, **creds)
-    except Exception as e:
-        logger.error("DB connection failed", exc_info=e)
-        raise
-
-    cursor = conn.cursor()
+    # 4) Connect via adapter
+    if driver == "sqlite":
+        bridge = SQLiteBridge(creds, as_dict=as_dict)
+    elif driver == "mysql":
+        bridge = MySQLBridge(creds, as_dict=as_dict)
+    elif driver == "postgres":
+        bridge = PostgresBridge(creds, as_dict=as_dict)
+    else:
+        raise ValueError(f"Unsupported driver: {driver}")
+    cursor = bridge.cursor
+    conn = bridge.conn
 
     # 5) Build final SQL for logging, if possible
     final_sql = raw_sql
@@ -129,14 +157,19 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
         if not quiet:
             _info_message(final_sql, color_msg=final_sql, color="cyan")
 
-        # 8) Execute
+        # 8) Execute (swap %s→? for SQLite if params given)
+        exec_sql = (
+            raw_sql.replace("%s", "?") if driver == "sqlite" and params else raw_sql
+        )
+
         if params is not None:
-            cursor.execute(raw_sql, params)
+            cursor.execute(exec_sql, params)
         else:
-            cursor.execute(raw_sql)
+            cursor.execute(exec_sql)
 
         # 9) Handle results
-        cmd = raw_sql.split()[0].upper()
+        match = re.search(r'^\s*(?:--.*\n\s*)*([A-Za-z]+)', raw_sql)
+        cmd = match.group(1).upper() if match else ''
         if cmd == "SELECT":
             rows = cursor.fetchall()
             return rows or []
@@ -158,14 +191,19 @@ def run_sql(sql: str, params: Optional[Tuple[Any, ...]] = None,
             return []
     except Exception as e:
         logger.error("SQL execution failed", exc_info=e)
-        raise
+        raise SQLExecutionError(f"Failed to execute SQL: {e}") from e
     finally:
-        cursor.close()
-        conn.close()
+        bridge.close()
 
 
-def get_column_values(*columns_to_return: str, table_name: str, unique_column_name: str, unique_column_value: Any,
-                      primary_key: str = 'id', as_tuple: bool = True) -> Union[None, Tuple, dict]:
+def get_column_values(
+        *columns_to_return: str,
+        table_name: str,
+        unique_column_name: str,
+        unique_column_value: Any,
+        primary_key: str = 'id',
+        as_tuple: bool = True
+) -> Optional[Union[Tuple[Any, ...], Dict[str, Any]]]:
     """
     Retrieve specified column values from a database table based on a unique column value.
 
@@ -228,9 +266,12 @@ def get_column_values(*columns_to_return: str, table_name: str, unique_column_na
     return row
 
 
-def get_column_values_regexp(*columns_to_return: str, table_name: str,
-                             unique_column_name: str, unique_column_regexp: str
-                             ) -> List[dict]:
+def get_column_values_regexp(
+        *columns_to_return: str,
+        table_name: str,
+        unique_column_name: str,
+        unique_column_regexp: str
+) -> List[dict]:
     """
     Returns column values based on tbl_name, unique_column_name and a REGEXP for unique_column_name's value
      - ** NOTE: WILL return multiple values **
