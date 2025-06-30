@@ -1,7 +1,10 @@
 [project]
 name = "db-bridge"
-version = "0.2.2"
-description = "Simple SQL connector — pass native SQL queries as strings with zero boilerplate."
+version = "0.3.0"
+description = """Minimal Python SQL connector with support for MySQL, SQLite, and PostgreSQL.
+Execute raw or parameterized queries with zero boilerplate.
+Manage multiple database profiles via a simple INI file (~/.db_bridge.cfg)
+"""
 readme = "README.md"
 authors = [{name = "Kanad Rishiraj (RoamingSaint)", email = "roamingsaint27@gmail.com"}]
 license = "MIT"
@@ -9,8 +12,8 @@ license-files = ["LICENSE"]
 requires-python = ">=3.7"
 dependencies = [
   "pymysql>=1.0",
-  "AskUser>=0.1.1",
-  "python-dotenv>=0.21"
+  "psycopg2-binary>=2.9",
+  "AskUser>=0.1",
 ]
 
 [project.optional-dependencies]

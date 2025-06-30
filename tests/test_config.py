@@ -1,48 +1,50 @@
+# tests/test_config.py
+
 import pytest
 
-from db_bridge import config
+from db_bridge.config import load_config
 
 
-# clear any ENV vars that might interfere
 @pytest.fixture(autouse=True)
-def clear_env(monkeypatch):
-    for var in ("DB_NAME", "DB_USER", "DB_PASS", "DB_HOST", "DB_PORT", "DB_BRIDGE_PROFILE"):
-        monkeypatch.delenv(var, raising=False)
+def tmp_config(tmp_path, monkeypatch):
+    # Create a temp INI file
+    ini_path = tmp_path / "test_config.ini"
+    INI = """
+[DEFAULT]
+active = alpha
+
+[alpha]
+driver   = sqlite
+database = /tmp/alpha.db
+
+[bravo]
+driver   = mysql
+host     = localhost
+port     = 3306
+database = bravo_db
+user     = user
+password = pass
+"""
+    # Write the INI content directly
+    ini_path.write_text(INI)
+    # Point the loader at it
+    monkeypatch.setenv("DB_BRIDGE_CONFIG", str(ini_path))
+    return ini_path
 
 
-def test_env_override(monkeypatch):
-    monkeypatch.setenv("DB_NAME", "db1")
-    monkeypatch.setenv("DB_USER", "user1")
-    monkeypatch.setenv("DB_PASS", "pw1")
-    monkeypatch.setenv("DB_HOST", "h1")
-    monkeypatch.setenv("DB_PORT", "1234")
-
-    cfg = config.load_config()
-    assert cfg["database"] == "db1"
-    assert cfg["user"] == "user1"
-    assert cfg["password"] == "pw1"
-    assert cfg["host"] == "h1"
-    assert cfg["port"] == 1234
+def test_load_default():
+    creds = load_config()
+    assert creds["driver"] == "sqlite"
+    assert creds["database"] == "/tmp/alpha.db"
 
 
-def test_ini_fallback(tmp_path, monkeypatch):
-    # Create a fake ~/.db_bridge.cfg
-    ini = tmp_path / ".db_bridge.cfg"
-    ini.write_text(
-        "[DEFAULT]\n"
-        "active = prof1\n"
-        "[prof1]\n"
-        "host = localhost\n"
-        "port = 3307\n"
-        "name = db2\n"
-        "user = user2\n"
-        "password = pw2\n"
-    )
-    monkeypatch.setenv("HOME", str(tmp_path))
+def test_load_named_profile():
+    creds = load_config("bravo")
+    assert creds["driver"] == "mysql"
+    assert creds["host"] == "localhost"
+    assert creds["database"] == "bravo_db"
 
-    cfg = config.load_config()
-    assert cfg["database"] == "db2"
-    assert cfg["user"] == "user2"
-    assert cfg["password"] == "pw2"
-    assert cfg["host"] == "localhost"
-    assert cfg["port"] == 3307
+
+def test_missing_profile_raises():
+    with pytest.raises(RuntimeError):
+        load_config("charlie")

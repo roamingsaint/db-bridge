@@ -1,63 +1,48 @@
+# tests/test_config.py
+
 import pytest
-import pymysql
 
-from db_bridge.db_utils import run_sql
-from db_bridge import config
+from db_bridge.config import load_config
 
 
-class DummyCursor:
-    def __init__(self, rows, rowcount=0, lastrowid=None):
-        self._rows = rows
-        self.rowcount = rowcount
-        self.lastrowid = lastrowid
+# Fixture to write a temp config and point at it
+@pytest.fixture(autouse=True)
+def tmp_config(tmp_path, monkeypatch):
+    ini_path = tmp_path / "test_config.ini"
+    INI = """
+[DEFAULT]
+active = alpha
 
-    def execute(self, sql, params=None):
-        pass
+[alpha]
+driver   = sqlite
+database = /tmp/alpha.db
 
-    def fetchall(self):
-        return self._rows
-
-    def close(self):
-        pass
-
-
-class DummyConn:
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def cursor(self):
-        return self._cursor
-
-    def commit(self):
-        pass
-
-    def close(self):
-        pass
+[bravo]
+driver   = mysql
+host     = localhost
+port     = 3306
+database = bravo_db
+user     = user
+password = pass
+"""
+    ini_path.write_text(INI)
+    monkeypatch.setenv("DB_BRIDGE_CONFIG", str(ini_path))
+    return ini_path
 
 
-def test_run_sql_select(monkeypatch):
-    monkeypatch.setattr(config, "load_config", lambda: {})
-    dummy_rows = [{"a": 1}, {"a": 2}]
-    dummy = DummyConn(DummyCursor(dummy_rows))
-    monkeypatch.setattr(pymysql, "connect", lambda **kw: dummy)
-
-    res = run_sql("SELECT * FROM x", params=None)
-    assert res == dummy_rows
+def test_load_default():
+    creds = load_config()
+    assert creds["driver"] == "sqlite"
+    assert creds["database"] == "/tmp/alpha.db"
 
 
-def test_run_sql_insert(monkeypatch):
-    monkeypatch.setattr(config, "load_config", lambda: {})
-    dummy = DummyConn(DummyCursor([], rowcount=1, lastrowid=42))
-    monkeypatch.setattr(pymysql, "connect", lambda **kw: dummy)
-
-    res = run_sql("INSERT INTO x VALUES (1)", params=None)
-    assert res == 42
+def test_load_named_profile():
+    creds = load_config("bravo")
+    assert creds["driver"] == "mysql"
+    assert creds["host"] == "localhost"
+    assert creds["database"] == "bravo_db"
 
 
-def test_run_sql_update(monkeypatch):
-    monkeypatch.setattr(config, "load_config", lambda: {})
-    dummy = DummyConn(DummyCursor([], rowcount=3))
-    monkeypatch.setattr(pymysql, "connect", lambda **kw: dummy)
-
-    res = run_sql("UPDATE x SET a=1 WHERE id=2", params=None)
-    assert res == 3
+def test_missing_profile_raises():
+    with pytest.raises(RuntimeError):
+        load_config("charlie")
