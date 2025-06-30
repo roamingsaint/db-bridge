@@ -58,11 +58,15 @@ def load_config(profile_name: str = None) -> Dict[str, Any]:
     creds = {"driver": driver}
 
     if driver == "sqlite":
-        db_path = sect.get("database") or sect.get("path")
-        if not db_path:
+        raw_path = sect.get("database") or sect.get("path")
+        if not raw_path:
             raise RuntimeError(
                 f"SQLite profile '{active}' requires a 'database = /path/to/file.db'"
             )
+
+        # Expand leading '~' to the user's home directory
+        db_path = Path(raw_path).expanduser().as_posix()
+
         creds["database"] = db_path
     else:
         creds.update({
