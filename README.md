@@ -1,6 +1,6 @@
 # db-bridge
 
-A minimal, flexible Python SQL connector for MySQL—just pass native SQL queries as strings, with optional 12‑factor env or INI profile configuration.
+A minimal, flexible Python SQL connector for MySQL, SQLite, and PostgreSQL—just pass native SQL queries as strings, with optional INI profile configuration.
 
 ---
 
@@ -9,11 +9,12 @@ A minimal, flexible Python SQL connector for MySQL—just pass native SQL querie
 1. [Installation](#installation)  
 2. [Quick Start](#quick-start)  
 3. [Configuration](#configuration)  
-   - [Environment Variables (`.env`)](#environment-variables-env)  
-   - [INI Profile (`~/.db_bridge.cfg`)](#ini-profile-~db_bridgecfg)  
+   - [Custom Config Override](#custom-config-override)  
+   - [INI Profiles (`~/.db_bridge.cfg`)](#ini-profiles-db_bridgecfg)  
 4. [Usage Examples](#usage-examples)  
    - [Simple Queries](#simple-queries)  
    - [Parameterized Queries (Safe)](#parameterized-queries-safe)  
+   - [Multiple Profiles](#multiple-profiles)  
    - [Handling NULL values](#handling-null-values)  
    - [Advanced Helpers](#advanced-helpers)  
 5. [Testing](#testing)  
@@ -24,13 +25,13 @@ A minimal, flexible Python SQL connector for MySQL—just pass native SQL querie
 
 ## Installation
 
-Install the latest release from PyPI:
+Install from PyPI:
 
 ```bash
 pip install db-bridge
 ```
 
-To enable colorful console output (requires `colorfulPyPrint`), install with the `color` extra:
+For colorful output (needs `colorfulPyPrint`):
 
 ```bash
 pip install db-bridge[color]
@@ -49,18 +50,22 @@ pip install -e .
 ## Quick Start
 
 ```python
-from db_bridge import run_sql, load_config
+from db_bridge.db_utils import run_sql
+from db_bridge.config   import load_config
 
-# Optionally inspect loaded config
+# Inspect your default config (INI default)
 print(load_config())
 
-# Execute a simple SELECT
+# Simple SELECT (uses default profile)
 rows = run_sql("SELECT id, name FROM users")
 for row in rows:
     print(row)
 
-# Execute an INSERT
-new_id = run_sql("INSERT INTO users (name,email) VALUES ('Alice','alice@example.com')")
+# INSERT example
+new_id = run_sql(
+    "INSERT INTO users (name,email) VALUES (%s,%s)",
+    params=("Alice","alice@example.com"),
+)
 print(f"Inserted row ID: {new_id}")
 ```
 
@@ -68,52 +73,57 @@ print(f"Inserted row ID: {new_id}")
 
 ## Configuration
 
-### Environment Variables (`.env`)
+### Custom Config Override
 
-Create a file named `.env` in your project root:
+If you ever need to point at a different INI file (for CI, Docker, or testing), set:
 
-```dotenv
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=mydb
-DB_USER=myuser
-DB_PASS=mypassword
-# Optional: switch profile when multiple in INI
-# DBBRIDGE_PROFILE=prod
+```bash
+export DB_BRIDGE_CONFIG=/path/to/alternate_db_bridge.cfg
 ```
 
-The package will load `.env` automatically if `python-dotenv` is installed.
+That file will be used **only if it exists**; otherwise `~/.db_bridge.cfg` is loaded as usual.
 
 ---
 
-### INI Profile (`~/.db_bridge.cfg`)
+### INI Profiles (`~/.db_bridge.cfg`)
 
-For multiple database profiles, create `~/.db_bridge.cfg`:
+For multiple databases (MySQL, SQLite, Postgres, or multiple MySQL clusters), define profiles in:
 
 ```ini
 [DEFAULT]
-active = dev
+active = dev_db
 
-[dev]
-host = localhost
-port = 3306
-name = mydb_dev
-user = devuser
+[dev_db]
+driver   = mysql
+host     = localhost
+port     = 3306
+database = mydb_dev
+user     = devuser
 password = devpass
 
-[prod]
-host = prod.db.example.com
-port = 3306
-name = mydb_prod
-user = produser
+[prod_db]
+driver   = mysql
+host     = prod.db.example.com
+port     = 3306
+database = mydb_prod
+user     = produser
 password = prodpass
+
+[sqlite_local]
+driver   = sqlite
+database = /full/path/to/local.db
+
+[postgres_analytics]
+driver   = postgres
+host     = pg.example.com
+port     = 5432
+database = analytics
+user     = pguser
+password = pgpass
 ```
 
-Switch profiles via:
-
-```bash
-export DBBRIDGE_PROFILE=prod
-```
+- **Default** profile is the one named by `[DEFAULT] active`.  
+- Callers can still pick any profile at runtime via the `profile` parameter (see below).  
 
 ---
 
@@ -190,7 +200,7 @@ pytest tests/
 ## Contributing
 
 Contributions welcome! Please open issues or pull requests.  
-Make sure to follow the existing style and add tests for new features.
+Follow existing style and add tests for new features.
 
 ---
 
