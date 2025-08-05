@@ -13,15 +13,17 @@ from .sqlite_utils import SQLiteBridge
 
 # Attempt to import print_custom; if missing, define a no-op
 try:
-    from colorfulPyPrint.py_color import print_custom
+    from colorfulPyPrint.py_color import print_custom, print_error
 
     COLOR_PRINT = True
 except ImportError:
     COLOR_PRINT = False
 
+    def print_custom(msg, *args, **kwargs):
+        print(msg)
 
-    def print_custom():
-        pass
+    def print_error(msg):
+        print(f"❌{msg}")
 
 from . import config
 
@@ -191,6 +193,7 @@ def run_sql(
             return []
     except Exception as e:
         logger.error("SQL execution failed", exc_info=e)
+        print_error(f"SQL query: {final_sql}")
         raise SQLExecutionError(f"Failed to execute SQL: {e}") from e
     finally:
         bridge.close()
