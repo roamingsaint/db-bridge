@@ -19,9 +19,11 @@ try:
 except ImportError:
     COLOR_PRINT = False
 
+    def print_custom(msg, *args, **kwargs):
+        print(msg)
 
-    def print_custom():
-        pass
+    def print_error(msg):
+        print(f"❌  {msg}")
 
 from . import config
 
@@ -191,6 +193,7 @@ def run_sql(
             return []
     except Exception as e:
         logger.error("SQL execution failed", exc_info=e)
+        print_error(f"SQL query:\n{final_sql}")
         raise SQLExecutionError(f"Failed to execute SQL: {e}") from e
     finally:
         bridge.close()
