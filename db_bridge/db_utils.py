@@ -160,39 +160,42 @@ def run_sql(
             _info_message(final_sql, color_msg=final_sql, color="cyan")
 
         # 8) Execute (swap %s→? for SQLite if params given)
-        exec_sql = (
-            raw_sql.replace("%s", "?") if driver == "sqlite" and params else raw_sql
-        )
+        exec_sql = raw_sql.replace("%s", "?") if (driver == "sqlite" and params) else raw_sql
 
         if params is not None:
             cursor.execute(exec_sql, params)
         else:
             cursor.execute(exec_sql)
 
-        # 9) Handle results
+        # 9) Decide result behavior:
+        # If the statement produced a result set, cursor.description will be non-None.
+        if cursor.description is not None:
+            rows = cursor.fetchall() or []
+            return rows
+
+        # Otherwise, it's a write/DDL/etc.; commit and choose a sensible return value.
+        # We still try to detect INSERT/UPDATE/DELETE for nicer return semantics.
         match = re.search(r'^\s*(?:--.*\n\s*)*([A-Za-z]+)', raw_sql)
         cmd = match.group(1).upper() if match else ''
-        if cmd == "SELECT":
-            rows = cursor.fetchall()
-            return rows or []
-        elif cmd == "INSERT":
-            conn.commit()
+
+        conn.commit()
+
+        if cmd == "INSERT":
             affected = cursor.rowcount
             if not quiet:
                 _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.", color="bold_cyan")
             return cursor.lastrowid
-        elif cmd in ("UPDATE", "DELETE"):
-            conn.commit()
+
+        if cmd in ("UPDATE", "DELETE"):
             affected = cursor.rowcount
             if not quiet:
                 _info_message(f"{affected} rows affected.", color_msg=f"{affected} rows affected.", color="bold_cyan")
             return affected
-        else:
-            # Other commands (e.g., DDL)
-            conn.commit()
-            return []
+
+        # DDL or other statements → no result set; return empty list for consistency.
+        return []
     except Exception as e:
-        logger.error("SQL execution failed", exc_info=e)
+        logger.error("SQL execution failed for: %s", final_sql, exc_info=e)
         print_error(f"SQL query: {final_sql}")
         raise SQLExecutionError(f"Failed to execute SQL: {e}") from e
     finally:
