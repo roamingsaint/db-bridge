@@ -43,6 +43,10 @@ class SQLExecutionError(DBBridgeError):
     """Raised when SQL execution fails (wraps the original error)."""
 
 
+class NoRowFoundError(DBBridgeError):
+    """Raised when get_column_values finds no matching rows."""
+
+
 def _info_message(msg: str, *, color_msg: Optional[str] = None, color='cyan'):
     """
     Show an informational message. If colorfulPyPrint is installed,
@@ -208,7 +212,8 @@ def get_column_values(
         unique_column_name: str,
         unique_column_value: Any,
         primary_key: str = 'id',
-        as_tuple: bool = True
+        as_tuple: bool = True,
+        error_if_missing: bool = True,
 ) -> Optional[Union[Tuple[Any, ...], Dict[str, Any]]]:
     """
     Retrieve specified column values from a database table based on a unique column value.
@@ -222,17 +227,19 @@ def get_column_values(
         table_name (str): The name of the table to query.
         unique_column_name (str): The name of the unique column to filter by.
         unique_column_value (str/int): The exact value to match in `unique_column_name`.
-        primary_key (str): Default: 'id'. Primary_key of the table. Helps choose if there are multiple values.
+        primary_key (str): Default: 'id'. Primary key of the table (used to disambiguate multiples).
         as_tuple (bool): If True, returns the result as a tuple in the order of `columns_to_return`;
                          if False, returns as a dictionary.
+        error_if_missing (bool): If True (default), raises NoRowFoundError when there are no matches.
+                       If False, returns None when there are no matches.
 
     Returns:
-      - None if no matches
-      - A tuple of values (in order of columns_to_return) if as_tuple=True
-      - A dict of {column: value} if as_tuple=False
+        - None if no matches and error_if_missing=False
+        - A tuple of values (in order of columns_to_return) if as_tuple=True
+        - A dict of {column: value} if as_tuple=False
 
     Raises:
-        Exception: If an error occurs during SQL execution.
+        NoRowFoundError: If no rows match and error_if_missing=True.
     """
     # Build a parameterized SQL string
     cols = ",".join(columns_to_return)
@@ -246,6 +253,8 @@ def get_column_values(
     rows: List[dict] = run_sql(sql, params=(unique_column_value,), as_dict=True)
 
     if not rows:
+        if error_if_missing:
+            raise NoRowFoundError(f"No rows found in {table_name} where {unique_column_name} = {unique_column_value!r}")
         return None
 
     if len(rows) > 1:
@@ -254,7 +263,7 @@ def get_column_values(
             input_msg=f"Select the correct {table_name} {primary_key}",
             primary_key=primary_key,
             table_desc=f"{table_name} matches for {unique_column_value}",
-            xq=False
+            xq=False,
         )
         row = chosen_row
     else:

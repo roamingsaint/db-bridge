@@ -201,7 +201,8 @@ val = get_column_values(
     unique_column_name="username",
     unique_column_value="alice",
     primary_key="id",
-    as_tuple=False
+    as_tuple=False,
+    error_if_missing=True
 )
 print(val)
 
