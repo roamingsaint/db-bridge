@@ -81,7 +81,7 @@ def run_sql(
         as_dict: bool = True,
         quiet: Optional[bool] = None,
         none_to_null: bool = True,
-        profile: str = None,
+        db_bridge_profile: str = None,
         db_creds: Optional[dict] = None
 ) -> Union[List[dict], int]:
     """
@@ -93,7 +93,7 @@ def run_sql(
         as_dict:      Return rows as dicts (True) or tuples (False).
         quiet:        Suppress SQL and row-count output if True.
         none_to_null: Replace literal None in raw SQL with SQL NULL.
-        profile:      INI section name to use (falls back to [DEFAULT].active).
+        db_bridge_profile: INI section name to use (falls back to [DEFAULT].active).
         db_creds:     Direct credentials dict; mutually exclusive with profile.
 
     Returns:
@@ -105,9 +105,9 @@ def run_sql(
     """
 
     # 1) Credentials: either db_creds or an INI profile (never both)
-    if db_creds and profile:
+    if db_creds and db_bridge_profile:
         raise ValueError("Specify only one of db_creds or profile, not both.")
-    creds = db_creds if db_creds else config.load_config(profile)
+    creds = db_creds if db_creds else config.load_config(db_bridge_profile)
     driver = creds.get("driver", "mysql").lower()
 
     # 2) Prepare raw SQL
@@ -214,6 +214,8 @@ def get_column_values(
         primary_key: str = 'id',
         as_tuple: bool = True,
         error_if_missing: bool = True,
+        db_bridge_profile: str = None,
+        db_creds: Optional[dict] = None
 ) -> Optional[Union[Tuple[Any, ...], Dict[str, Any]]]:
     """
     Retrieve specified column values from a database table based on a unique column value.
@@ -232,6 +234,8 @@ def get_column_values(
                          if False, returns as a dictionary.
         error_if_missing (bool): If True (default), raises NoRowFoundError when there are no matches.
                        If False, returns None when there are no matches.
+        db_bridge_profile: INI section name to use (falls back to [DEFAULT].active).
+        db_creds:     Direct credentials dict; mutually exclusive with profile.
 
     Returns:
         - None if no matches and error_if_missing=False
@@ -250,7 +254,8 @@ def get_column_values(
         else cols
     )
     sql = f"SELECT {select_cols} FROM {table_name} WHERE {unique_column_name} = %s"
-    rows: List[dict] = run_sql(sql, params=(unique_column_value,), as_dict=True)
+    rows: List[dict] = run_sql(sql, params=(unique_column_value,), as_dict=True,
+                               db_bridge_profile=db_bridge_profile, db_creds=db_creds)
 
     if not rows:
         if error_if_missing:
@@ -285,7 +290,9 @@ def get_column_values_regexp(
         *columns_to_return: str,
         table_name: str,
         unique_column_name: str,
-        unique_column_regexp: str
+        unique_column_regexp: str,
+        db_bridge_profile: str = None,
+        db_creds: Optional[dict] = None
 ) -> List[dict]:
     """
     Returns column values based on tbl_name, unique_column_name and a REGEXP for unique_column_name's value
@@ -296,11 +303,14 @@ def get_column_values_regexp(
         table_name: Table name.
         unique_column_name: Column against which to apply the REGEXP.
         unique_column_regexp: The REGEXP pattern to match.
+        db_bridge_profile: INI section name to use (falls back to [DEFAULT].active).
+        db_creds:     Direct credentials dict; mutually exclusive with profile.
 
     Returns:
         List[dict]: One dict per matching row. [] list if no matches.
     """
     cols = ",".join(columns_to_return)
     sql = f"SELECT {cols} FROM {table_name} WHERE {unique_column_name} REGEXP %s"
-    rows = run_sql(sql, params=(unique_column_regexp,), as_dict=True)
+    rows = run_sql(sql, params=(unique_column_regexp,), as_dict=True,
+                   db_bridge_profile=db_bridge_profile, db_creds=db_creds)
     return rows  # Returns [] if no matches found
