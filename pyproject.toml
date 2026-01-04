@@ -1,6 +1,6 @@
 [project]
 name = "db-bridge"
-version = "0.3.7"
+version = "0.3.8"
 description = """Minimal Python SQL connector with support for MySQL, SQLite, and PostgreSQL.
 Execute raw or parameterized queries with zero boilerplate.
 Manage multiple database profiles via a simple INI file (~/.db_bridge.cfg)
